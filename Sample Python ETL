@@ -1,0 +1,74 @@
+import glob
+import pandas as pd
+from datetime import datetime
+import logging
+from typing import Dict, DataFrame
+from pathlib import Path
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+class BankMarketCapETL:
+    def __init__(self, input_path: str = "./", output_path: str = "./"):
+        self.input_path = Path(input_path)
+        self.output_path = Path(output_path)
+        
+    def extract_from_json(self, file_path: Path) -> DataFrame:
+        """Extract data from JSON file into DataFrame"""
+        try:
+            return pd.read_json(file_path)
+        except Exception as e:
+            logger.error(f"Error reading JSON file: {e}")
+            raise
+            
+    def extract(self) -> DataFrame:
+        """Extract and prepare initial DataFrame"""
+        file_name = self.input_path / "bank_market_cap_1.json"
+        df = self.extract_from_json(file_name)
+        return df[["Name", "Market Cap (US$ Billion)"]]
+
+    def transform(self, df: DataFrame, exchange_rate: float) -> DataFrame:
+        """Transform market cap values from USD to GBP"""
+        df_transformed = df.copy()
+        df_transformed["Market Cap (US$ Billion)"] = (
+            df_transformed["Market Cap (US$ Billion)"] / exchange_rate
+        ).round(3)
+        df_transformed.rename(
+            columns={"Market Cap (US$ Billion)": "Market Cap (GBP$ Billion)"}, 
+            inplace=True
+        )
+        return df_transformed
+
+    def load(self, df: DataFrame) -> None:
+        """Save transformed data to CSV"""
+        output_file = self.output_path / "bank_market_cap_gbp.csv"
+        df.to_csv(output_file, index=False)
+        logger.info(f"Data saved to {output_file}")
+
+
+etl = BankMarketCapETL()
+    
+    logger.info("ETL Job Started")
+    
+    # Extract
+    logger.info("Extract phase Started")
+    df = etl.extract()
+    logger.info("Extract phase Completed")
+    
+    # Transform
+    logger.info("Transform phase Started")
+    exchange_rates_df = pd.read_csv("exchange_rates.csv", index_col=0)
+    exchange_rate = exchange_rates_df.loc["GBP"].values[0]
+    df_transformed = etl.transform(df, exchange_rate)
+    logger.info("Transform phase Completed")
+    
+    # Load
+    logger.info("Load phase Started")
+    etl.load(df_transformed)
+    logger.info("Load phase Completed")
+    
+    logger.info("ETL Job Completed")
